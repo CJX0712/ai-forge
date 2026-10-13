@@ -1,0 +1,30 @@
+{
+  "name": "@chenxing/ai-forge",
+  "version": "1.0.0",
+  "description": "AI Forge / 星锻 — a zero-dependency, fully self-verifying AI system: numerical kernels, autodiff, Muon/L-BFGS optimizers, FlashAttention + GQA + MLA transformers, and the classical ML spectrum, all bound by executable invariants.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./src/*": "./src/*"
+  },
+  "bin": {
+    "forge": "bin/forge.mjs"
+  },
+  "scripts": {
+    "test": "node test/run.mjs",
+    "bench": "node bench/run.mjs",
+    "build": "node tools/build-html.mjs",
+    "demo": "node bin/forge.mjs demo"
+  },
+  "keywords": [
+    "ai", "machine-learning", "deep-learning", "transformer", "flash-attention",
+    "muon", "l-bfgs", "autodiff", "numerical-linear-algebra", "zero-dependency",
+    "invariant-testing", "reproducible"
+  ],
+  "author": "晨星 (Chenxing) <133180712@qq.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
