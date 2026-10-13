@@ -4,7 +4,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
-[![invariants](https://img.shields.io/badge/executable%20invariants-52%2F52-brightgreen.svg)](./test)
+[![invariants](https://img.shields.io/badge/executable%20invariants-54%2F54-brightgreen.svg)](./test)
 [![zero-deps](https://img.shields.io/badge/runtime%20deps-0-lightgrey.svg)](./src)
 
 **AI Forge（星锻）** 是一个用纯 JavaScript 编写、零运行时依赖、可由浏览器与 Node 22 直接运行的 AI 系统。
@@ -104,7 +104,7 @@ node bin/forge.mjs selfcheck
 - **L1 自动微分**：tape 反向模式；`matmul/add/tanh/softmaxRows/crossEntropy` 等；中心差分 `gradCheck`（maxRel < 1e-5）。
 - **L2 优化器**：AdamW（解耦衰减）、SGD(+Nesterov)、**Muon**（Newton–Schulz 正交化 + RMS 重缩放，1-D 参数回退 AdamW）、L-BFGS（两环递归 + 强 Wolfe 线搜索）。
 - **L3 模块**：RMSNorm（‖y‖²/d=1）、RoPE（⟨R(q,m),R(k,n)⟩ 仅依赖 m−n）、SwiGLU、MoE top-k 路由（辅助损失均匀时=1）、确定性初始化。
-- **L4 注意力**：FlashAttention（在线 softmax，O(1) 额外显存，数值≡全注意力）、GQA、MLA（低秩 KV 压缩，KV cache 4× 更小）、KV-cache 增量解码 bit-exact。
+- **L4 注意力**：FlashAttention（在线 softmax，O(1) 额外显存，数值≡全注意力）、GQA、MLA（低秩 KV 压缩，KV cache 4× 更小）、KV-cache 增量解码 bit-exact、**滑动窗口注意力**（Mistral 风格，window≥T 时 ≡ 因果全注意力）、**线性注意力**（RetNet/Mamba 风格 kernel 注意力，O(T·d²)，直接形式 ≡ 递推 O(1) 解码形式）。
 - **L5 Transformer**：pre-norm、tied head、GQA、可选 MoE；`forward`/`generate`（贪心/采样）。
 - **L6 经典 ML**：OLS/Ridge/LASSO/Logistic、SMO-SVM(KKT)、CART/RF/GBDT、k-means++/GMM-EM、KD-tree/KNN/NB、PCA/kernel-PCA。
 - **L7 推理**：top-k / top-p / min-p 采样、beam search、投机解码（无损接受率）、困惑度。

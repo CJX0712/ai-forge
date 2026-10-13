@@ -11,7 +11,7 @@ L1  随机        random.js        sfc32(确定性) / Vose alias
 L1  自动微分    autodiff.js       tape 反向模式 + 中心差分 gradCheck
 L2  优化器      optim.js          AdamW / SGD / Muon / L-BFGS
 L3  网络模块    nn/modules.js     RMSNorm / RoPE / SwiGLU / MoE
-L4  注意力      nn/attention.js    FlashAttention / GQA / MLA / KV-cache
+L4  注意力      nn/attention.js    FlashAttention / GQA / MLA / KV-cache / 滑动窗口 / 线性注意力
 L5  Transformer nn/transformer.js pre-norm, tied head, GQA, 可选 MoE
 L6  经典 ML     ml/*              linear / svm / tree / cluster / instance / pca
 L7  推理采样    infer/sampling.js top-k / top-p / min-p / beam / 投机解码
@@ -72,7 +72,7 @@ X ─▶ [L1 autodiff tape] ─▶ matmul/add/tanh ─▶ [L3 RMSNorm/RoPE/SwiGL
 | autodiff | 梯度 | gradCheck maxRel < 1e-5 |
 | optim | 优化 | L-BFGS ‖∇f‖<1e-10；Muon 收敛 ≤2% 初值 |
 | modules | NN 层 | RMSNorm ‖y‖=1；RoPE 仅依赖相对位置 |
-| attention | 注意力 | Flash≡Full bit-exact；MLA 4× KV |
+| attention | 注意力 | Flash≡Full bit-exact；MLA 4× KV；windowed≡full@window≥T；linear direct≡recurrent |
 | transformer | LM | 确定性；flash/full 一致 |
 | ml/* | 经典 ML | SSE/LL 单调；KKT；Eckart–Young |
 | sampling | 解码 | top-p 保质量；投机解码无损 |

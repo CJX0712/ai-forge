@@ -234,3 +234,140 @@ export function ropePairDot(qk, kn, m, n, D, base = 10000.0) {
   }
   return dot;
 }
+
+/* ------------------------------------------- 滑动窗口注意力 (Mistral-style) */
+/**
+ * Sliding-window attention (Beltagy et al. 2020 / Mistral 2023): each query t
+ * attends only to keys inside a window of width `window`. Causal form restricts
+ * to [t−window+1, t]; bidirectional form to [t−window+1, t+window−1].
+ *
+ * Invariant (tested): with window ≥ T this must equal causal `attentionFull`
+ * bit-for-bit — the window imposes no restriction, so the two independent
+ * implementations must agree to 1e-12.
+ */
+export function windowedAttention(Q, K, V, { Tq, Tk, Hq, Hkv, dk, dv = dk, window, causal = true }) {
+  const group = Hq / Hkv;
+  const sc = 1 / Math.sqrt(dk);
+  const out = new Float64Array(Tq * Hq * dv);
+  const logits = new Float64Array(Tk);
+  const probs = new Float64Array(Tk);
+  for (let h = 0; h < Hq; h++) {
+    const kvh = Math.floor(h / group);
+    for (let t = 0; t < Tq; t++) {
+      let lo, hi;
+      if (causal) { lo = Math.max(0, t - window + 1); hi = t; }
+      else { lo = Math.max(0, t - window + 1); hi = Math.min(Tk - 1, t + window - 1); }
+      if (hi < lo) continue;
+      // windowed logits
+      const qOff = (t * Hq + h) * dk;
+      for (let s = lo; s <= hi; s++) {
+        let dot = 0;
+        const kOff = (s * Hkv + kvh) * dk;
+        for (let i = 0; i < dk; i++) dot += Q[qOff + i] * K[kOff + i];
+        logits[s] = dot * sc;
+      }
+      // stable softmax over [lo, hi]
+      let m = -Infinity;
+      for (let s = lo; s <= hi; s++) m = Math.max(m, logits[s]);
+      let sum = 0;
+      for (let s = lo; s <= hi; s++) { const e = Math.exp(logits[s] - m); probs[s] = e; sum += e; }
+      for (let s = lo; s <= hi; s++) probs[s] /= sum;
+      const oOff = (t * Hq + h) * dv;
+      for (let s = lo; s <= hi; s++) {
+        const p = probs[s];
+        if (p === 0) continue;
+        const vOff = (s * Hkv + kvh) * dv;
+        for (let i = 0; i < dv; i++) out[oOff + i] += p * V[vOff + i];
+      }
+    }
+  }
+  return out;
+}
+
+/* ------------------------------- 线性注意力 (RetNet/Mamba 风格 kernel 注意力) */
+/**
+ * Linear (kernel-based) attention replaces softmax with a positive feature map
+ * φ(·), giving O(T·d²) complexity instead of O(T²·d) and an O(1) recurrent
+ * decode — the backbone of RetNet / linear-attention / state-space models.
+ *
+ *   S_t = Σ_{s≤t} φ(k_s) ⊗ v_s ,  z_t = Σ_{s≤t} φ(k_s)
+ *   out_t = φ(q_t)ᵀ S_t / (φ(q_t)ᵀ z_t)
+ *
+ * This is a *rearrangement* of the softmax-free kernel attention, so the direct
+ * form and the recurrent form must be bit-identical — the executable invariant.
+ */
+function _eluPlusOne(x) { return (x >= 0 ? x : Math.expm1(x)) + 1; }
+
+/** Direct O(T²) reference form. */
+export function linearAttentionDirect(Q, K, V, { Tq, Tk, Hq, Hkv, dk, dv = dk, causal = true, featureMap = null }) {
+  const phi = featureMap || _eluPlusOne;
+  const group = Hq / Hkv;
+  const out = new Float64Array(Tq * Hq * dv);
+  for (let h = 0; h < Hq; h++) {
+    const kvh = Math.floor(h / group);
+    for (let t = 0; t < Tq; t++) {
+      const qOff = (t * Hq + h) * dk;
+      let denom = 0;
+      const num = new Float64Array(dv);
+      const sEnd = causal ? t : Tk - 1;
+      for (let s = 0; s <= sEnd; s++) {
+        const kOff = (s * Hkv + kvh) * dk;
+        const vOff = (s * Hkv + kvh) * dv;
+        let sim = 0;
+        for (let i = 0; i < dk; i++) sim += phi(Q[qOff + i]) * phi(K[kOff + i]);
+        denom += sim;
+        for (let j = 0; j < dv; j++) num[j] += sim * V[vOff + j];
+      }
+      const oOff = (t * Hq + h) * dv;
+      if (denom > 0) for (let j = 0; j < dv; j++) out[oOff + j] = num[j] / denom;
+    }
+  }
+  return out;
+}
+
+/** Recurrent O(T) streaming form — the O(1)-decode variant. */
+export function linearAttentionRecurrent(Q, K, V, { Tq, Tk, Hq, Hkv, dk, dv = dk, causal = true, featureMap = null }) {
+  const phi = featureMap || _eluPlusOne;
+  const group = Hq / Hkv;
+  const out = new Float64Array(Tq * Hq * dv);
+  for (let h = 0; h < Hq; h++) {
+    const kvh = Math.floor(h / group);
+    const S = new Float64Array(dk * dv);   // Σ φ(k) ⊗ v
+    const z = new Float64Array(dk);          // Σ φ(k)
+    if (!causal) {
+      // non-causal: accumulate the full KV context once
+      for (let s = 0; s < Tk; s++) {
+        const kOff = (s * Hkv + kvh) * dk;
+        const vOff = (s * Hkv + kvh) * dv;
+        for (let i = 0; i < dk; i++) {
+          const ki = phi(K[kOff + i]);
+          z[i] += ki;
+          for (let j = 0; j < dv; j++) S[i * dv + j] += ki * V[vOff + j];
+        }
+      }
+    }
+    for (let t = 0; t < Tq; t++) {
+      if (causal) {
+        const kOff = (t * Hkv + kvh) * dk;
+        const vOff = (t * Hkv + kvh) * dv;
+        for (let i = 0; i < dk; i++) {
+          const ki = phi(K[kOff + i]);
+          z[i] += ki;
+          for (let j = 0; j < dv; j++) S[i * dv + j] += ki * V[vOff + j];
+        }
+      }
+      const qOff = (t * Hq + h) * dk;
+      let denom = 0;
+      for (let i = 0; i < dk; i++) denom += phi(Q[qOff + i]) * z[i];
+      const oOff = (t * Hq + h) * dv;
+      if (denom > 0) {
+        for (let j = 0; j < dv; j++) {
+          let s = 0;
+          for (let i = 0; i < dk; i++) s += phi(Q[qOff + i]) * S[i * dv + j];
+          out[oOff + j] = s / denom;
+        }
+      }
+    }
+  }
+  return out;
+}

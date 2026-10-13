@@ -25,6 +25,7 @@ import {
   // nn
   rmsnorm, rope, swiglu, moeRoute,
   attentionFull, flashAttention, KVCache, decodeStep, mlaEncode, mlaUpProject, ropePairDot,
+  windowedAttention, linearAttentionDirect, linearAttentionRecurrent,
   TransformerLM,
   // ml
   linearRegression, ridgeRegression, lassoRegression, logisticRegression,
@@ -577,6 +578,40 @@ const L4 = [
     const ratio = mhaPerToken / mlaPerToken;
     assertTrue("compression ≥ 2×", ratio >= 2);
     return `KV cache: ${mhaPerToken} → ${mlaPerToken} floats/token = ${ratio}× smaller`;
+  }),
+
+  new Invariant("Windowed attention ≡ causal full attention when window ≥ T", "L4-attention", () => {
+    for (const [T, Hq, Hkv, dk] of [[48, 8, 2, 16], [32, 4, 4, 8], [64, 6, 3, 12]]) {
+      const mk = (n, s) => Float64Array.from({ length: n }, (_, i) => Math.sin(i * 0.37 + s) * 2);
+      const Q = mk(T * Hq * dk, 0), K = mk(T * Hkv * dk, 1), V = mk(T * Hkv * dk, 2);
+      const win = windowedAttention(Q, K, V, { Tq: T, Tk: T, Hq, Hkv, dk, window: T, causal: true });
+      const full = attentionFull(Q, K, V, { Tq: T, Tk: T, Hq, Hkv, dk, causal: true });
+      approxArray(`window≥T ≡ full (T=${T})`, win, full, 1e-12);
+    }
+    // sanity: a narrow window must actually truncate (differ from full)
+    const T = 40, Hq = 4, Hkv = 2, dk = 8;
+    const mk = (n, s) => Float64Array.from({ length: n }, (_, i) => Math.sin(i * 0.37 + s) * 2);
+    const Q = mk(T * Hq * dk, 0), K = mk(T * Hkv * dk, 1), V = mk(T * Hkv * dk, 2);
+    const narrow = windowedAttention(Q, K, V, { Tq: T, Tk: T, Hq, Hkv, dk, window: 3, causal: true });
+    const full = attentionFull(Q, K, V, { Tq: T, Tk: T, Hq, Hkv, dk, causal: true });
+    const diff = maxAbsDiff(narrow, full);
+    if (!(diff > 1e-6)) throw new Error(`narrow window did not truncate (max diff ${diff})`);
+    return "bit-exact at window≥T; narrow window truncates (Δ>1e-6)";
+  }),
+
+  new Invariant("Linear attention: direct form ≡ recurrent O(1)-decode form", "L4-attention", () => {
+    for (const [Tq, Tk, Hq, Hkv, dk, dv, causal] of [
+      [32, 32, 4, 2, 8, 8, true],
+      [24, 48, 2, 1, 6, 10, false],
+      [16, 16, 3, 3, 4, 4, true],
+    ]) {
+      const mk = (n, s) => Float64Array.from({ length: n }, (_, i) => Math.sin(i * 0.41 + s) * 1.7);
+      const Q = mk(Tq * Hq * dk, 0), K = mk(Tk * Hkv * dk, 1), V = mk(Tk * Hkv * dv, 2);
+      const direct = linearAttentionDirect(Q, K, V, { Tq, Tk, Hq, Hkv, dk, dv, causal });
+      const recur = linearAttentionRecurrent(Q, K, V, { Tq, Tk, Hq, Hkv, dk, dv, causal });
+      approxArray(`direct≡recurrent (${Tq}x${Tk},causal=${causal})`, direct, recur, 1e-11);
+    }
+    return "rearrangement exact to <1e-11 — O(1) recurrent decode is correct";
   }),
 ];
 

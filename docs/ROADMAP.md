@@ -20,7 +20,7 @@
 - [ ] **Transformer 接入 autodiff 图**：把 `TransformerLM.forward` 改为 tape 式前向，使其可被 `backward` 端到端训练（目前训练路径复用 L2 MLP 验证；不变量已标注）。打通后增加「LM 训练 loss 单调下降」不变量。
 - [ ] **WebGPU/WASM GEMM 后端**：在 `linalg.gemm` 上插拔高性能后端，零算法改动；新增「backend 一致性」不变量（WASM vs JS 数值一致）。
 - [ ] **量化推理**：INT8/FP8 权重 + 动态定点；新增「量化误差上界」不变量。
-- [ ] **更多注意力变体**：滑动窗口、线性注意力（RetNet/Mamba 风格状态空间），复用现有 `attentionFull` 接口。
+- [x] **更多注意力变体**：滑动窗口（Mistral 风格，window≥T 时 ≡ 因果全注意力）、线性注意力（RetNet/Mamba 风格 kernel 注意力，直接形式 ≡ 递推 O(1) 解码形式），各带可执行不变量。
 
 ## 中期（v1.2+）
 

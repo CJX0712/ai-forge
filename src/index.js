@@ -22,6 +22,7 @@ export {
 export {
   attentionFull, flashAttention, KVCache, decodeStep,
   mlaEncode, mlaUpProject, ropePairDot,
+  windowedAttention, linearAttentionDirect, linearAttentionRecurrent,
 } from "./nn/attention.js";
 export { TransformerLM } from "./nn/transformer.js";
 
